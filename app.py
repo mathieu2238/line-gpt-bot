@@ -1,14 +1,16 @@
 from flask import Flask, request, abort
-import openai
 import os
+import sys
+from openai import OpenAI
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 
 app = Flask(__name__)
 
-# 環境変数
-openai.api_key = os.getenv("OPENAI_API_KEY")
+# OpenAI API クライアント（新方式）
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
 line_bot_api = LineBotApi(os.getenv("LINE_CHANNEL_ACCESS_TOKEN"))
 handler = WebhookHandler(os.getenv("LINE_CHANNEL_SECRET"))
 
@@ -27,19 +29,22 @@ def callback():
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     user_msg = event.message.text
+    print("User message received:", user_msg, file=sys.stderr)
 
-    # ChatGPTへの問い合わせ
-    response = openai.ChatCompletion.create(
-        model="gpt-4",  # ここはgpt-4にしてもOK
-        messages=[{"role": "user", "content": user_msg}]
-    )
-    ai_reply = response.choices[0].message['content']
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": user_msg}]
+        )
+        ai_reply = response.choices[0].message.content
+        print("AI reply generated:", ai_reply, file=sys.stderr)
 
-    # LINEへ返信
-    line_bot_api.reply_message(
-        event.reply_token,
-        TextSendMessage(text=ai_reply)
-    )
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text=ai_reply)
+        )
+    except Exception as e:
+        print("Error occurred:", str(e), file=sys.stderr)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
